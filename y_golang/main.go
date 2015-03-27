@@ -8,15 +8,60 @@ import (
 
 const MFLEN = 128
 
-func p2floor(x) uint32{
-	for i:=1; 2**i<x; i++{
+func p2floor(x uint32) uint32{
+	var ret uint32
+	for ret = 1; ret<x; ret=ret*2{
 	}
-	i -= 1
-	return 2**i
+	ret=ret/2
+	return ret
 }
 
 func Wrap(x, i) uint32{
 	return (x % p2floor(i)) + (i − p2floor(i))
+}
+
+func Bxor(A []byte, B []byte){
+	C := make([]byte, len(A))
+	for i, value := range A{
+		C[i]=value ^ B[i]
+	}
+	return C
+}
+
+//SMix1 according to docs
+func SMix1(B []byte, N, V []byte, flag bool) []byte{
+	X := B
+	var j uint32
+	for i:=0; i<N; i++{
+		V[i] = X
+		/*No ROM is implemented yet
+		j = Integerify(X) % NROM
+                X = Bxor(X, VROM[j])*/
+		if flag == true {
+			j = Wrap(Integerify(X), i)
+			X = Bxor(X, V[j])
+		}
+		X = BlockMix(X)
+	}
+	return X
+}
+
+//SMix2 according to docs
+func SMix2(B []byte, N, V []byte, flag bool) []byte{
+	X := B
+	var j uint32
+	for i:=0; i<N; i++{
+		/*No ROM implemented yet
+		j = Integerify(X) % NROM
+		X = Bxor(X, VROM[j])*/
+		j = Integerify(X) % N
+		X = BlockMix(Bxor(X, V[J]))
+		if flag == true {
+			V[j] = X
+		}
+		X = BlockMix(x)
+	}
+	return X
 }
 
 func SMix(B []byte, N, p) {
@@ -48,7 +93,7 @@ func SMix(B []byte, N, p) {
 	}
 
 	for i := 0; i<p; i++ {
-		SMix2r (Bi , N, Nloopall − Nlooprw , V, f lags excluding YESCRYPT_RW)
+		SMix2r (Bi , N, Nloopall − Nlooprw , V, 0)
 	}
 }
 
