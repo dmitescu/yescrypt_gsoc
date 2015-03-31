@@ -43,7 +43,9 @@ func Bcopy(A []uint32, B []uint32, n int) {
 
 func H(B []uint32, S []uint32)
 {
-	
+	X = make([][]uint32, S_SIMD)
+	X[0] = B[]
+	X[1] = B[]
 	uint32_t (*X)[S_SIMD][2] = (uint32_t (*)[S_SIMD][2])B
 	const uint32_t (*S0)[2] = (const uint32_t (*)[2])S
 	const uint32_t (*S1)[2] = S0 + S_SIZE1 * S_SIMD
