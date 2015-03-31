@@ -22,9 +22,8 @@ func p2floor(x uint32) uint32{
 	ret=ret/2
 	return ret
 }
-
 func Wrap(x, i) uint32{
-	return (x % p2floor(i)) + (i − p2floor(i))
+	return (x % p2floor(i)) + (i - p2floor(i))
 }
 
 func Bxor(A []uint32, B []uint32, sz int){
@@ -41,44 +40,45 @@ func Bcopy(A []uint32, B []uint32, n int) {
 //Base functions
 //------
 
-func H(B []uint32, S []uint32)
-{
-	
-	uint32_t (*X)[S_SIMD][2] = (uint32_t (*)[S_SIMD][2])B
-	const uint32_t (*S0)[2] = (const uint32_t (*)[2])S
-	const uint32_t (*S1)[2] = S0 + S_SIZE1 * S_SIMD
-	
-	size_t i, j, k
+func H(B []uint32, S []uint32){
+
+	//There's no way of making such pointer casts
+	//Thus, we use the following formulas:
+	//X[i][j][k]=B[2iS_SIMD+2j+k]
+	//S0[i][j]=S[2i+j]
+	//S1[i][j]=S[2i+j+S_SIZE1*S_SIMD]
+	var i, j, k int
 
 	var x, s0, s1 uint64
 	
 	var xl uint32
 	var xh uint32
 
-	p0 = make(uint32, 2)
-	p1 = make(uint32, 2)
+	//p0[i][j]=S[2i+j+(xl & S_MASK)]
+	//p1[i][j]=S[2i+j+(xh & S_MASK)]
 	
 	for i := 0; i < S_ROUNDS; i++ {
 		for j := 0; j < S_P; j++ {
-			xl = X[j][0][0]
-			xh = X[j][0][1]
-
-			p0 = S0 + (xl & S_MASK) / sizeof(*S0)
-			p1 = S1 + (xh & S_MASK) / sizeof(*S1)
+			xl = B[2*j*S_SIMD]
+			xh = B[2*j*S_SIMD+1]
 
 			for (k = 0; k < S_SIMD; k++) {
-				s0 = (p0[k][1] << 32) + p0[k][0]
-				s1 = (p1[k][1] << 32) + p1[k][0]
-
-				xl = X[j][k][0]
-				xh = X[j][k][1]
+				s0 = (S[2*k+1+(xl & S_MASK)] << 32) +
+					S[2*k+(xl & S_MASK)
+					
+				s1 = (S[2*k+1+(xh & S_MASK)] << 32) +
+					S[2*k+(xh & S_MASK)
+					
+				xl = B[2*j*S_SIMD+2*k]
+				xh = B[2*j*S_SIMD+2*k+1]
 
 				x = uint64(xh * xl)
+					
 				x += s0
 				x ^= s1
 
-				X[j][k][0] = x
-				X[j][k][1] = x >> 32
+				B[2*j*S_SIMD+2*k] = x
+				B[2*j*S_SIMD+2*k+1]= x >> 32
 			}
 		}
 	}
