@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	//"fmt"
 	"crypto/sha256"
 	"golang.org/x/crypto/pbkdf2"
 )
@@ -9,8 +9,17 @@ import (
 const MFLEN = 128
 
 const S_BITS = 8
-const S_P_SIZE = ((S_P * S_SIMD + 15 ) / 16 )
+const S_P = 4
+const S_ROUNDS = 6
+const S_SIMD = 2
 
+const S_N = 2
+
+const S_SIZE1 = (1 << S_BITS)
+const S_MASK = ((S_SIZE1 - 1) * S_SIMD * 8)
+const S_SIZE_ALL = (S_N * S_SIZE1 * S_SIMD * 2)
+const S_P_SIZE = (S_P * S_SIMD * 2)
+const S_MIN_R = ((S_P * S_SIMD + 15) / 16)
 
 // Simple functions
 // ------
@@ -22,13 +31,14 @@ func p2floor(x uint32) uint32{
 	ret=ret/2
 	return ret
 }
-func Wrap(x, i) uint32{
+
+func Wrap(x uint32, i uint32) uint32{
 	return (x % p2floor(i)) + (i - p2floor(i))
 }
 
 func Bxor(A []uint32, B []uint32, sz int){
 	for i:=0; i<sz; i++{
-		A[i]=value ^ B[i]
+		A[i] = A[i] ^ B[i]
 	}
 }
 
@@ -47,7 +57,7 @@ func H(B []uint32, S []uint32){
 	//X[i][j][k]=B[2iS_SIMD+2j+k]
 	//S0[i][j]=S[2i+j]
 	//S1[i][j]=S[2i+j+S_SIZE1*S_SIMD]
-	var i, j, k int
+	var i, j, k uint32
 
 	var x, s0, s1 uint64
 	
@@ -57,18 +67,14 @@ func H(B []uint32, S []uint32){
 	//p0[i][j]=S[2i+j+(xl & S_MASK)]
 	//p1[i][j]=S[2i+j+(xh & S_MASK)]
 	
-	for i := 0; i < S_ROUNDS; i++ {
-		for j := 0; j < S_P; j++ {
+	for i = 0; i < S_ROUNDS; i++ {
+		for j = 0; j < S_P; j++ {
 			xl = B[2*j*S_SIMD]
 			xh = B[2*j*S_SIMD+1]
 
-			for (k = 0; k < S_SIMD; k++) {
-				s0 = (S[2*k+1+(xl & S_MASK)] << 32) +
-					S[2*k+(xl & S_MASK)
-					
-				s1 = (S[2*k+1+(xh & S_MASK)] << 32) +
-					S[2*k+(xh & S_MASK)
-					
+			for k = 0; k < S_SIMD; k++ {
+				s0 = (S[2*k+1+(xl & S_MASK)] << 32) + S[2*k+(xl & S_MASK)]
+				s1 = (S[2*k+1+(xh & S_MASK)] << 32) + S[2*k+(xh & S_MASK)]
 				xl = B[2*j*S_SIMD+2*k]
 				xh = B[2*j*S_SIMD+2*k+1]
 
@@ -77,21 +83,20 @@ func H(B []uint32, S []uint32){
 				x += s0
 				x ^= s1
 
-				B[2*j*S_SIMD+2*k] = x
-				B[2*j*S_SIMD+2*k+1]= x >> 32
+				B[2*j*S_SIMD+2*k] = uint32(x)
+				B[2*j*S_SIMD+2*k+1]= uint32(x >> 32)
 			}
 		}
 	}
 }
 
-func BMix(B []uint32, X []uint32, S []uint32, r int)
-{
+func BMix(B []uint32, X []uint32, S []uint32, r int){
 	var r1 int
 	var r2 int
 	var i int
 	
 	r1 = r * 128 / (S_P_SIZE * 4)
-	Bcopy(X, B[((r1-1) * S_P_SIZE) :], S_P_SIZE]
+	Bcopy(X, B[((r1-1) * S_P_SIZE) :], S_P_SIZE)
 	
 	for i = 0; i < r1; i++ {
 		Bxor(X, B[(i * S_P_SIZE):], S_P_SIZE)
@@ -112,8 +117,7 @@ func BMix(B []uint32, X []uint32, S []uint32, r int)
 }
 
 //Integerify
-func Integerify(B []uint32 , r int) uint64
-{
+func Integerify(B []uint32 , r int) uint64{
 	return (B[(2*r-1)*16+13] << 32) + B[(2*r-1)*16]
 }
 
@@ -122,7 +126,7 @@ func Integerify(B []uint32 , r int) uint64
 // -----
 
 //SMix1 according to docs
-func SMix1(B []uint32 B, N uint64, V []byte, flag bool) []byte{
+func SMix1(B []uint32 , r uint64, N uint64 , V []byte , flag bool) []byte{
 	X := B
 	s := 32 * r
 	
@@ -136,17 +140,17 @@ func SMix1(B []uint32 B, N uint64, V []byte, flag bool) []byte{
 			j = Wrap(Integerify(X, r), i)
 			X = Bxor(X, V[j * s: ], s)
 		}
-		//to add blockmix salsa
+		//todo: add blockmix salsa
 		X = BlockMix(X)
 	}
 	return X
 }
 
 //SMix2 according to docs
-func SMix2(B []byte, N, V []byte, flag bool) []byte{
+func SMix2(B []byte, N, Nloop, V []byte, flag bool) []byte{
 	X := B
 	var j uint32
-	for i:=0; i<N; i++{
+	for i:=0; i<Nloop; i++{
 		/*No ROM implemented yet
 		j = Integerify(X) % NROM
 		X = Bxor(X, VROM[j]) else*/
@@ -160,7 +164,7 @@ func SMix2(B []byte, N, V []byte, flag bool) []byte{
 	return X
 }
 
-func SMix(B []byte, r, N, p, t) {
+func SMix(B []byte, r int, N int, p int) {
 	var v uint32
 	var w uint32
 	var n uint32
@@ -193,13 +197,12 @@ func SMix(B []byte, r, N, p, t) {
 			n = N - v
 		}
 		w = v + n - 1
-		SMix1r (Bi , Sbytes/MFLEN, Si , 0)
-		SMix1r (Bi , n, Vv..w , 1)
-		SMix2r (Bi , p2floor(n), Nlooprw ,V[v:w] , 1)
+		SMix1 (Bp, r, Np, Vp, 1)
+		SMix2 (Bp, p2floor(n), Nlooprw ,V[v:w] , 1)
 	}
 
 	for i := 0; i<p; i++ {
-		SMix2r (Bi , N, Nloopall − Nlooprw , V, 0)
+		SMix(Bp, N, Nloopall - Nlooprw, V, 0)
 	}
 
 	
