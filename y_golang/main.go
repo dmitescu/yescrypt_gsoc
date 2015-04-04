@@ -24,15 +24,15 @@ const S_MIN_R = ((S_P * S_SIMD + 15) / 16)
 // Simple functions
 // ------
 
-func p2floor(x uint32) uint32{
-	var ret uint32
+func p2floor(x uint64) uint64{
+	var ret uint64
 	for ret = 1; ret<x; ret=ret*2{
 	}
 	ret=ret/2
 	return ret
 }
 
-func Wrap(x uint32, i uint32) uint32{
+func Wrap(x uint64, i uint64) uint64{
 	return (x % p2floor(i)) + (i - p2floor(i))
 }
 
@@ -50,7 +50,54 @@ func Bcopy(A []uint32, B []uint32, n int) {
 //Base functions
 //------
 
-func H(B []uint32, S []uint32){
+func R(a uint32, b uint32) uint32{
+	return (((a) << (b)) | ((a) >> (32 - (b))))
+}
+
+func H(B []uint32){
+
+	var x[16] uint32;
+	var i int;
+
+	/* Mimic SIMD shuffling */
+	for i = 0; i < 16; i++{
+	x[i * 5 % 16] = B[i]
+	}
+	
+	for i = 0; i < 8; i += 2 {
+		/* Operate on columns */
+		x[ 4] ^= R(x[ 0]+x[12], 7);  x[ 8] ^= R(x[ 4]+x[ 0], 9)
+		x[12] ^= R(x[ 8]+x[ 4],13);  x[ 0] ^= R(x[12]+x[ 8],18)
+
+		x[ 9] ^= R(x[ 5]+x[ 1], 7);  x[13] ^= R(x[ 9]+x[ 5], 9)
+		x[ 1] ^= R(x[13]+x[ 9],13);  x[ 5] ^= R(x[ 1]+x[13],18)
+
+		x[14] ^= R(x[10]+x[ 6], 7);  x[ 2] ^= R(x[14]+x[10], 9)
+		x[ 6] ^= R(x[ 2]+x[14],13);  x[10] ^= R(x[ 6]+x[ 2],18)
+
+		x[ 3] ^= R(x[15]+x[11], 7);  x[ 7] ^= R(x[ 3]+x[15], 9)
+		x[11] ^= R(x[ 7]+x[ 3],13);  x[15] ^= R(x[11]+x[ 7],18)
+
+		/* Operate on rows */
+		x[ 1] ^= R(x[ 0]+x[ 3], 7);  x[ 2] ^= R(x[ 1]+x[ 0], 9)
+		x[ 3] ^= R(x[ 2]+x[ 1],13);  x[ 0] ^= R(x[ 3]+x[ 2],18)
+
+		x[ 6] ^= R(x[ 5]+x[ 4], 7);  x[ 7] ^= R(x[ 6]+x[ 5], 9)
+		x[ 4] ^= R(x[ 7]+x[ 6],13);  x[ 5] ^= R(x[ 4]+x[ 7],18)
+
+		x[11] ^= R(x[10]+x[ 9], 7);  x[ 8] ^= R(x[11]+x[10], 9)
+		x[ 9] ^= R(x[ 8]+x[11],13);  x[10] ^= R(x[ 9]+x[ 8],18)
+
+		x[12] ^= R(x[15]+x[14], 7);  x[13] ^= R(x[12]+x[15], 9)
+		x[14] ^= R(x[13]+x[12],13);  x[15] ^= R(x[14]+x[13],18)
+	}
+
+	for i = 0; i < 16; i++ {
+		B[i] += x[i * 5 % 16];
+	}
+}
+
+func Hp(B []uint32, S []uint32){
 
 	//There's no way of making such pointer casts
 	//Thus, we use the following formulas:
@@ -73,8 +120,8 @@ func H(B []uint32, S []uint32){
 			xh = B[2*j*S_SIMD+1]
 
 			for k = 0; k < S_SIMD; k++ {
-				s0 = (S[2*k+1+(xl & S_MASK)] << 32) + S[2*k+(xl & S_MASK)]
-				s1 = (S[2*k+1+(xh & S_MASK)] << 32) + S[2*k+(xh & S_MASK)]
+				s0 = (uint64(S[2*k+1+(xl & S_MASK)]) << 32) + uint64(S[2*k+(xl & S_MASK)])
+				s1 = (uint64(S[2*k+1+(xh & S_MASK)]) << 32) + uint64(S[2*k+(xh & S_MASK)])
 				xl = B[2*j*S_SIMD+2*k]
 				xh = B[2*j*S_SIMD+2*k+1]
 
@@ -110,15 +157,15 @@ func BMix(B []uint32, X []uint32, S []uint32, r int){
 	H(B[(i * 16):])
 	i++
 
-	for i; i < r2; i++ {
-		Bxor(B[(i * 16):16], B[(i-1)*16:], 16)
-		H(B[i * 16])
+	for j:=i; j < r2; j++ {
+		Bxor(B[(j * 16):16], B[(j-1)*16:], 16)
+		H(B[j * 16 :])
 	}
 }
 
 //Integerify
 func Integerify(B []uint32 , r int) uint64{
-	return (B[(2*r-1)*16+13] << 32) + B[(2*r-1)*16]
+	return (uint64(B[(2*r-1)*16+13]) << 32) + uint64(B[(2*r-1)*16])
 }
 
 
@@ -126,96 +173,133 @@ func Integerify(B []uint32 , r int) uint64{
 // -----
 
 //SMix1 according to docs
-func SMix1(B []uint32 , r uint64, N uint64 , V []byte , flag bool) []byte{
-	X := B
+func SMix1(B []byte , r int, N uint64 , V []uint32, X []uint32, flag bool) []uint32{
+
+	for k := 0; k < 2*r; k++{
+		for i := 0; i < 16; i++{
+			tmp := uint32(B[k*16+(i*5 % 16)+0])
+			tmp += uint32(B[k*16+(i*5 % 16)+1]) << 8
+			tmp += uint32(B[k*16+(i*5 % 16)+2]) << 16
+			tmp += uint32(B[k*16+(i*5 % 16)+3]) << 24
+			X[k*16+i] = tmp
+		}
+	}
+	
+	
 	s := 32 * r
 	
-	var j uint32
-	for i:=0; i<N; i++{
-		Bcopy(V[i*s :], X, s)
+	var j uint64
+	
+	for i := 0; i < int(N); i++{
+	 	Bcopy(V[i*int(s) :], X, s)
 		/*No ROM is implemented yet
 		j = Integerify(X) % NROM
                 X = Bxor(X, VROM[j])*/
 		if flag == true {
-			j = Wrap(Integerify(X, r), i)
-			X = Bxor(X, V[j * s: ], s)
+			j = Wrap(Integerify(X, r), uint64(i))
+			Bxor(X, V[j * uint64(s): ], s)
 		}
-		//todo: add blockmix salsa
-		X = BlockMix(X)
+		H(X)
 	}
-	return X
+
+	for k := 0; k < 2*r; k++{
+		for i := 0; i < 16; i++{
+			B[k*16+(i*5 % 16)+0] = byte(X[k*16+i]) & 0xff
+			B[k*16+(i*5 % 16)+1] = byte(X[k*16+i] >>  8) & 0xff 
+			B[k*16+(i*5 % 16)+2] = byte(X[k*16+i] >> 16) & 0xff
+			B[k*16+(i*5 % 16)+3] = byte(X[k*16+i] >> 24) & 0xff
+		}
+	}
+
+	
 }
 
 //SMix2 according to docs
-func SMix2(B []byte, N, Nloop, V []byte, flag bool) []byte{
-	X := B
-	var j uint32
-	for i:=0; i<Nloop; i++{
+func SMix2(B []byte, r int, N uint64, Nloop uint64, V []uint32, X []uint32, flag bool) []uint32{
+	
+	for k := 0; k < 2*r; k++{
+		for i := 0; i < 16; i++{
+			tmp := uint32(B[k*16+(i*5 % 16)+0])
+			tmp += uint32(B[k*16+(i*5 % 16)+1]) << 8
+			tmp += uint32(B[k*16+(i*5 % 16)+2]) << 16
+			tmp += uint32(B[k*16+(i*5 % 16)+3]) << 24
+			X[k*16+i] = tmp
+		}
+	}
+	
+	var j uint64
+	
+	for i:=0; i<int(Nloop); i++{
 		/*No ROM implemented yet
 		j = Integerify(X) % NROM
 		X = Bxor(X, VROM[j]) else*/
 		j = Integerify(X, r) % (N-1)
-		X = BlockMix(Bxor(X, V[j]))
+		Bxor(X, V[j*32*uint64(r):], 32*r)
 		if flag == true {
-			V[j] = X
+			Bcopy(V[32*uint64(r)*j:],X,32*r)
 		}
-		X = BlockMix(x)
+		H(X)
 	}
-	return X
+	
+	for k := 0; k < 2*r; k++{
+		for i := 0; i < 16; i++{
+			B[k*16+(i*5 % 16)+0] = byte(X[k*16+i]) & 0xff
+			B[k*16+(i*5 % 16)+1] = byte(X[k*16+i] >>  8) & 0xff 
+			B[k*16+(i*5 % 16)+2] = byte(X[k*16+i] >> 16) & 0xff
+			B[k*16+(i*5 % 16)+3] = byte(X[k*16+i] >> 24) & 0xff
+		}
+	}
+
 }
 
-func SMix(B []byte, r int, N int, p int) {
+func SMix(B []byte, r int, N uint64, p int, V []uint32, X []uint32) {
 	var v uint32
 	var w uint32
-	var n uint32
-	var Nlall uint32
-	var Nlrw uint32
-
-	X = make([]uint32, 32*r)
+	var n uint64
 	
-	for i := 0; i < 32*r; i++ {
-		X[i] = uint32(B[j]) | uint32(B[j+1])<<8 | uint32(B[j+2])<<16 | uint32(B[j+3])<<24
-		j += 4
-	}
+	var Nlall  uint64
+	var Nlrw   uint64
+	var Vchunk uint64
+	var Nchunk uint64
 	
-	n = N/p
+	Vchunk=0
+	
+	Nchunk = N/uint64(p)
+	Nlall = Nchunk
+	
 	//The required number of iterations
 	//according to table (I picked a value)
 	Nlall = (N+2)/3
-	Mlrw  = Nlall/p
+	Nlrw  = Nlall/uint64(p)
+	
 	//Making them divisible by 2
-	n     = n - (n % 2)
-	Nlall = Nlall - (Nlall % 2)
-	Nlrw  = Nlrw  - (Nlrw  % 2)
+	Nchunk = Nchunk - (Nchunk % 2)
+	Nlall  = Nlall - (Nlall % 2)
+	Nlrw   = Nlrw  - (Nlrw  % 2)
 
 	for i := 0; i<p ; i++ {
-		Bp = B[i*s:]
-		Vp = V[Vchunk * s:]
+		Bp := B[i*32*r:]
+		Vp := V[Vchunk * 32*uint64(r):]
 		
-		v = in
-		if i == (p-1) {
-			n = N - v
+		if i < (p-1) {
+			n = N - Vchunk
+		}else {
+			n = Nchunk
 		}
-		w = v + n - 1
-		SMix1 (Bp, r, Np, Vp, 1)
-		SMix2 (Bp, p2floor(n), Nlooprw ,V[v:w] , 1)
+		
+		SMix1 (Bp, r, n, Vp, X, true)
+		SMix2 (Bp, r, p2floor(n), Nlrw ,Vp, X, true)
 	}
 
 	for i := 0; i<p; i++ {
-		SMix(Bp, N, Nloopall - Nlooprw, V, 0)
+		Bp := B[i * 32 * r:]
+		SMix2(Bp, r, N, Nlall - Nlrw, V, X, false)
 	}
 
 	
-	for _, v := range X[:32*r] {
-		B[j+0] = byte(v >> 0)
-		B[j+1] = byte(v >> 8)
-		B[j+2] = byte(v >> 16)
-		B[j+3] = byte(v >> 24)
-		j += 4
-	}
 }
 
-func ycrypt(passphrase, salt []byte, N, p, dkLen int) []byte {
+func ycrypt(passphrase []byte, salt []byte, N uint64, r int, NX []byte) []byte {
 	if N <= 1 || N & (N-1) != 0 {
 		panic("N must be of form 2^k, k>0")
 	}
