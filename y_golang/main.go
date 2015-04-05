@@ -1,7 +1,7 @@
 package main
 
 import (
-	//"fmt"
+	"fmt"
 	"crypto/sha256"
 	"golang.org/x/crypto/pbkdf2"
 )
@@ -33,7 +33,8 @@ func p2floor(x uint64) uint64{
 }
 
 func Wrap(x uint64, i uint64) uint64{
-	return (x % p2floor(i)) + (i - p2floor(i))
+	var r = p2floor(i)
+	return (x % (r - 1)) + (i - r)
 }
 
 func Bxor(A []uint32, B []uint32, sz int){
@@ -173,7 +174,7 @@ func Integerify(B []uint32 , r int) uint64{
 // -----
 
 //SMix1 according to docs
-func SMix1(B []byte , r int, N uint64 , V []uint32, X []uint32, flag bool) []uint32{
+func SMix1(B []byte , r int, N uint64 , V []uint32, X []uint32, flag bool){
 
 	for k := 0; k < 2*r; k++{
 		for i := 0; i < 16; i++{
@@ -195,7 +196,7 @@ func SMix1(B []byte , r int, N uint64 , V []uint32, X []uint32, flag bool) []uin
 		/*No ROM is implemented yet
 		j = Integerify(X) % NROM
                 X = Bxor(X, VROM[j])*/
-		if flag == true {
+		if flag == true && i>1 {
 			j = Wrap(Integerify(X, r), uint64(i))
 			Bxor(X, V[j * uint64(s): ], s)
 		}
@@ -215,7 +216,7 @@ func SMix1(B []byte , r int, N uint64 , V []uint32, X []uint32, flag bool) []uin
 }
 
 //SMix2 according to docs
-func SMix2(B []byte, r int, N uint64, Nloop uint64, V []uint32, X []uint32, flag bool) []uint32{
+func SMix2(B []byte, r int, N uint64, Nloop uint64, V []uint32, X []uint32, flag bool){
 	
 	for k := 0; k < 2*r; k++{
 		for i := 0; i < 16; i++{
@@ -253,8 +254,7 @@ func SMix2(B []byte, r int, N uint64, Nloop uint64, V []uint32, X []uint32, flag
 }
 
 func SMix(B []byte, r int, N uint64, p int, V []uint32, X []uint32) {
-	var v uint32
-	var w uint32
+
 	var n uint64
 	
 	var Nlall  uint64
@@ -299,21 +299,25 @@ func SMix(B []byte, r int, N uint64, p int, V []uint32, X []uint32) {
 	
 }
 
-func ycrypt(passphrase []byte, salt []byte, N uint64, r int, NX []byte) []byte {
+func ycrypt(passphrase []byte, salt []byte, N uint64, r int, p int) []byte {
 	if N <= 1 || N & (N-1) != 0 {
 		panic("N must be of form 2^k, k>0")
 	}
-	
-	B := pbkdf2.Key(passphrase, salt, 1, p*MFLEN, sha256.New)
+
+	B := pbkdf2.Key(passphrase, salt, 1, 128*r*p, sha256.New)
+	V := make([]uint32, 128*r*int(N))
+	X := make([]uint32, 256*r)
 	
 	for i := 0; i < p; i++ {
-		SMix(B[i*128:], N, p)
+		SMix(B[i*r*32:], r, N, p, V, X)
 	}
-	return pbkdf2.Key(passphrase, B, 1, dkLen, sha256.New)
+	
+	return pbkdf2.Key(passphrase, B, 1, 128*r*p, sha256.New)
 }
 
 func main() {
-	fin := []byte("hello!")
-	buff := sha256.New()
-	buff.Write(fin)
+	newpass := []byte("haha")
+	newsalt := []byte("abc")
+	pass := ycrypt(newpass, newsalt, 2, 1, 1)
+	fmt.Println(pass)
 }
