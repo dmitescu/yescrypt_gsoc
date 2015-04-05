@@ -18,9 +18,7 @@ const S_N = 2
 
 const S_SIZE1 = (1 << S_BITS)
 const S_MASK = ((S_SIZE1 - 1) * S_SIMD * 8)
-const S_SIZE_ALL = (S_N * S_SIZE1 * S_SIMD * 2)
 const S_P_SIZE = (S_P * S_SIMD * 2)
-const S_MIN_R = ((S_P * S_SIMD + 15) / 16)
 
 // Simple functions
 // ------
