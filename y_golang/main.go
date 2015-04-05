@@ -319,8 +319,11 @@ func ycrypt(passphrase []byte, salt []byte, N uint64, r int, p int) []byte {
 }
 
 func main() {
-	newpass := []byte("password")
-	newsalt := []byte("NaCl")
-	pass := ycrypt(newpass, newsalt, 1024, 8, 16)
+	newpass := []byte{2, 3}
+	newsalt := []byte{253, 252, 251, 250,
+		249, 248, 247, 246,
+		245, 244, 243, 242,
+		241, 240, 239, 238}
+	pass := ycrypt(newpass, newsalt, 8, 8, 1)
 	fmt.Println(hex.EncodeToString(pass))
 }
