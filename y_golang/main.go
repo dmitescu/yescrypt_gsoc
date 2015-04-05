@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"encoding/hex"
 	"crypto/sha256"
 	"golang.org/x/crypto/pbkdf2"
 )
@@ -26,14 +27,17 @@ const S_MIN_R = ((S_P * S_SIMD + 15) / 16)
 
 func p2floor(x uint64) uint64{
 	var ret uint64
-	for ret = 1; ret<x; ret=ret*2{
+	ret = 1
+	for ret <= x {
+		ret=ret*2
 	}
 	ret=ret/2
 	return ret
 }
 
 func Wrap(x uint64, i uint64) uint64{
-	var r = p2floor(i)
+	var r uint64
+	r = p2floor(i)
 	return (x % (r - 1)) + (i - r)
 }
 
@@ -186,19 +190,20 @@ func SMix1(B []byte , r int, N uint64 , V []uint32, X []uint32, flag bool){
 		}
 	}
 	
-	
-	s := 32 * r
-	
+	var s uint64
 	var j uint64
-	
-	for i := 0; i < int(N); i++{
-	 	Bcopy(V[i*int(s) :], X, s)
+	var i uint64
+
+	s = 32 * uint64(r)
+
+	for i = 0; i < N; i++{
+	 	Bcopy(V[i*uint64(s) :], X, int(s))
 		/*No ROM is implemented yet
 		j = Integerify(X) % NROM
                 X = Bxor(X, VROM[j])*/
 		if flag == true && i>1 {
-			j = Wrap(Integerify(X, r), uint64(i))
-			Bxor(X, V[j * uint64(s): ], s)
+			j = Wrap(Integerify(X, r), i)
+			Bxor(X, V[j * s: ], int(s))
 		}
 		H(X)
 	}
@@ -312,12 +317,12 @@ func ycrypt(passphrase []byte, salt []byte, N uint64, r int, p int) []byte {
 		SMix(B[i*r*32:], r, N, p, V, X)
 	}
 	
-	return pbkdf2.Key(passphrase, B, 1, 128*r*p, sha256.New)
+	return pbkdf2.Key(passphrase, B, 1, len(B), sha256.New)
 }
 
 func main() {
-	newpass := []byte("haha")
-	newsalt := []byte("abc")
-	pass := ycrypt(newpass, newsalt, 2, 1, 1)
-	fmt.Println(pass)
+	newpass := []byte("password")
+	newsalt := []byte("NaCl")
+	pass := ycrypt(newpass, newsalt, 1024, 8, 16)
+	fmt.Println(hex.EncodeToString(pass))
 }
